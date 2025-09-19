@@ -1,24 +1,48 @@
+// android/app/build.gradle (Module :app)
 
 plugins {
-  id "com.android.application"
-  id "kotlin-android"
-  id "dev.flutter.flutter-gradle-plugin"
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
 }
+
 android {
-  namespace "com.whatf.app"
-  compileSdk 34
-  defaultConfig {
-    applicationId "com.whatf.app"
-    minSdk 23
-    targetSdk 34
-    versionCode 2
-    versionName "1.1.0"
-  }
-  buildTypes {
-    release {
-      minifyEnabled true
-      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    namespace "com.example.whatifapp"   // <-- metti qui il tuo package del Manifest
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "com.example.whatifapp"   // <-- uguale al package/Manifest
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+        multiDexEnabled true
     }
-  }
+
+    buildTypes {
+        release {
+            // In CI senza keystore, usa debug signing per evitare errori
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }
-flutter { source '../..' }
+
+dependencies {
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "com.google.android.material:material:1.12.0"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    // (Flutter gestisce le sue dipendenze; queste sono di base AndroidX)
+}

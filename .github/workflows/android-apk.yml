@@ -1,41 +1,49 @@
-
 name: Build Android APK
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
     steps:
+      # 1) Checkout del codice
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2) Setup Java (necessario per Gradle/Android)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
+      # 3) Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable'
-          channel: 'stable'
+          flutter-version: "3.24.0"
+          channel: stable
           cache: true
 
-      - name: Flutter pub get
+      # 4) Installare dipendenze
+      - name: Flutter Pub Get
         run: flutter pub get
 
-      - name: Build APK (release)
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: flutter build apk --release --dart-define=OPENAI_API_KEY=${OPENAI_API_KEY}
+      # 5) Accettare licenze Android e installare SDK necessari
+      - name: Setup Android SDK
+        run: |
+          echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Upload APK artifact
+      # 6) Build APK (entrypoint default: lib/main.dart)
+      - name: Build APK
+        run: flutter build apk --release
+
+      # 7) Caricare APK come artefatto scaricabile
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: whatf-app-apk
+          name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

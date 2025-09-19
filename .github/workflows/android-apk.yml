@@ -8,22 +8,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Codice
+      # 1) Codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Java 17
+      # 2) Java 17 per Gradle/Android
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # Android SDK
+      # 3) Android SDK (ambiente base)
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # Licenze + pacchetti (tollerante a "broken pipe")
+      # 4) Licenze + pacchetti (tollerante a "broken pipe")
       - name: Install Android packages
         shell: bash
         run: |
@@ -33,7 +33,7 @@ jobs:
           yes | $SM --licenses >/dev/null 2>&1 || true
           $SM "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # Flutter pin
+      # 5) Flutter (versione pin stabile)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -41,46 +41,53 @@ jobs:
           flutter-version: "3.24.0"
           cache: true
 
-      - name: Flutter pub get
+      # 6) Dipendenze
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Pub get
         run: flutter pub get
 
-      # Build APK (auto-rileva il flavor, se presente)
+      # 7) Build APK release (auto-detect flavor)
       - name: Build APK (release, auto-flavor)
         shell: bash
         run: |
           set -e
-          # Estrai il PRIMO flavor, se esiste, dal blocco productFlavors di build.gradle
-          FLAVOR=$(awk '/productFlavors[[:space:]]*{/{flag=1;next}/}/{if(flag){exit}}flag' android/app/build.gradle \
-            | grep -E '^[[:space:]]*[A-Za-z0-9_]+[[:space:]]*{' \
-            | head -n1 \
-            | sed -E 's/[[:space:]]*\\{.*$//' \
-            | tr -d '[:space:]')
+
+          # Estrai il PRIMO flavor (se esiste) dal blocco productFlavors in android/app/build.gradle
+          FLAVOR=$(awk '
+            /productFlavors[[:space:]]*{/ {inblock=1; next}
+            inblock && /}/ {exit}
+            inblock && match($0,/^[[:space:]]*([A-Za-z0-9_]+)[[:space:]]*{/,m) {print m[1]; exit}
+          ' android/app/build.gradle)
 
           echo "Flavor rilevato: ${FLAVOR:-<nessuno>}"
 
+          # Entry point (cambia se usi un main diverso)
+          ENTRYPOINT="lib/main.dart"
+
           if [ -z "$FLAVOR" ]; then
-            # Nessun flavor: build normale
+            # Nessun flavor
             if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release
+              flutter build apk --release -t "$ENTRYPOINT"
             else
-              flutter build apk --release --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+              flutter build apk --release -t "$ENTRYPOINT" \
+                --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             fi
           else
-            # Flavor presente: build con --flavor <nome>
-            # Nota: se il tuo entrypoint non è lib/main.dart, cambia -t di conseguenza.
+            # Con flavor
             if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release --flavor "$FLAVOR" -t lib/main.dart
+              flutter build apk --release --flavor "$FLAVOR" -t "$ENTRYPOINT"
             else
-              flutter build apk --release --flavor "$FLAVOR" -t lib/main.dart \
+              flutter build apk --release --flavor "$FLAVOR" -t "$ENTRYPOINT" \
                 --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             fi
           fi
 
-      # Artifact
+      # 8) Carica l'APK come artifact
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
-

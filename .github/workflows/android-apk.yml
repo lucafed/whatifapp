@@ -1,4 +1,4 @@
-name: Android APK (smart + verbose)
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -6,156 +6,44 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     steps:
-      # 1) Codice
+      # 1) Checkout del codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Java 17
+      # 2) Setup Java (necessario per Gradle/Android)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3) Android SDK
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # 4) Licenze + pacchetti (tollerante a "broken pipe")
-      - name: Install Android packages
-        shell: bash
-        run: |
-          set -e
-          SM="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SM" ]; then SM="sdkmanager"; fi
-          yes | $SM --licenses >/dev/null 2>&1 || true
-          $SM "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-      # 5) Flutter stabile
+      # 3) Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
           flutter-version: "3.24.0"
+          channel: stable
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      - name: Pub get
+      # 4) Installare dipendenze
+      - name: Flutter Pub Get
         run: flutter pub get
 
-      # 6) Build smart (senza flavor -> se fallisce prova moduli + flavors) con log verboso
-      - name: Build APK (smart, verbose)
-        shell: bash
+      # 5) Accettare licenze Android e installare SDK necessari
+      - name: Setup Android SDK
         run: |
-          set -e
+          echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-          ENTRYPOINT="lib/main.dart"   # <-- Cambia se usi un main diverso
+      # 6) Build APK (entrypoint default: lib/main.dart)
+      - name: Build APK
+        run: flutter build apk --release
 
-          run_flutter() {
-            # $1 = flavor (può essere vuoto)
-            local FL="$1"
-            local CMD="flutter build apk --release -t $ENTRYPOINT"
-            if [ -n "$FL" ]; then
-              CMD="$CMD --flavor $FL"
-            fi
-            if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
-              CMD="$CMD --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
-            fi
-
-            echo ">>> Eseguo: $CMD"
-            set +e
-            eval "$CMD -v" | tee -a build-verbose.log
-            local STATUS=${PIPESTATUS[0]}
-            set -e
-            return $STATUS
-          }
-
-          # Pulisci/crea cartella log
-          rm -f build-verbose.log
-          mkdir -p build_logs
-
-          echo ">>> [1/3] Provo build SENZA flavor"
-          if run_flutter ""; then
-            echo ">>> Build senza flavor riuscita"
-            mv build-verbose.log build_logs/build-verbose.log || true
-            exit 0
-          fi
-
-          echo ">>> Build senza flavor fallita. Rilevo MODULO Gradle e FLAVORS…"
-
-          # 2) Scopri il modulo corretto con Gradle
-          pushd android >/dev/null
-          chmod +x ./gradlew || true
-
-          MODULE=$(./gradlew -q projects \
-            | sed -n "s/^Project '\\(.*\\)'.*/\\1/p" \
-            | grep -v "^Root project 'android'$" \
-            | head -n1)
-
-          if [ -z "$MODULE" ]; then
-            echo ">>> Nessun subproject trovato. Uso ':app' come default."
-            MODULE="app"
-          fi
-
-          echo ">>> Modulo rilevato: $MODULE"
-
-          # 3) Trova flavors (assemble*Release) per il modulo
-          FLAVORS=$(
-            ./gradlew -q ":${MODULE}:tasks" --all \
-              | sed -n 's/.*assemble\([A-Za-z0-9]\+\)Release.*/\1/p' \
-              | sort -u \
-              | tr '[:upper:]' '[:lower:]'
-          )
-          popd >/dev/null
-
-          echo ">>> Flavors rilevati: ${FLAVORS:-<nessuno>}"
-
-          # 4) Se NON ci sono flavors, riprova build semplice (può essere caduta per altra ragione)
-          if [ -z "$FLAVORS" ]; then
-            echo ">>> Nessun flavor trovato. Riprovo build semplice con log."
-            if run_flutter ""; then
-              echo ">>> Build riuscita alla seconda prova senza flavor."
-              mv build-verbose.log build_logs/build-verbose.log || true
-              exit 0
-            else
-              echo ">>> Build senza flavor ancora fallita. Carico i log."
-              mv build-verbose.log build_logs/build-verbose.log || true
-              exit 1
-            fi
-          fi
-
-          # 5) Prova tutti i flavors
-          for F in $FLAVORS; do
-            echo ">>> [2/3] Provo flavor: $F"
-            if run_flutter "$F"; then
-              echo ">>> Build riuscita con flavor: $F"
-              mv build-verbose.log build_logs/build-verbose.log || true
-              exit 0
-            fi
-            echo ">>> Build fallita con flavor: $F. Provo il prossimo…"
-          done
-
-          echo ">>> Nessun flavor ha prodotto una build valida. Carico i log."
-          mv build-verbose.log build_logs/build-verbose.log || true
-          exit 1
-
-      # 7) Carica APK se presente
-      - name: Upload APK (if exists)
+      # 7) Caricare APK come artefatto scaricabile
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: warn
-
-      # 8) Carica SEMPRE i log della build
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: build_logs/
-          if-no-files-found: ignore
+          if-no-files-found: error

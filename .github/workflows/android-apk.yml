@@ -14,24 +14,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Java (Gradle/Android richiede JDK 17)
+      # 2) Java (Gradle richiede JDK 17)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      # 3) Android SDK (env base)
+      # 3) Android SDK (ambiente base)
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # 4) Pacchetti Android + licenze (manuale: evita bug su alcuni runner)
+      # 4) Pacchetti Android + licenze (tollerante a "broken pipe")
       - name: Install Android packages
         shell: bash
         run: |
-          sdkmanager --version
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          set -u
+          SDKMANAGER="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          # sdkmanager è in PATH, ma usiamo il percorso esplicito per sicurezza
+          if [ -x "$SDKMANAGER" ]; then
+            SM="$SDKMANAGER"
+          else
+            SM="sdkmanager"
+          fi
+
+          # Accetta licenze: ignora 'broken pipe' se sdkmanager chiude prima lo stream
+          yes | $SM --licenses >/dev/null 2>&1 || true
+
+          # Installa i pacchetti necessari
+          $SM "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       # 5) Flutter (versione pin esplicita)
       - name: Setup Flutter
@@ -41,7 +52,7 @@ jobs:
           flutter-version: "3.24.0"
           cache: true
 
-      # 6) Info e dipendenze
+      # 6) Info + dipendenze
       - name: Flutter doctor
         run: flutter doctor -v
 

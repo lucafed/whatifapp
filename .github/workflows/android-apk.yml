@@ -47,13 +47,14 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
-      # 6) Build “smart”: senza flavor -> se fallisce, rileva flavors da Gradle e riprova
-      - name: Build APK (smart flavor detection)
+      # 6) Build “smart”: senza flavor -> se fallisce, rileva MODULO + FLAVOR con Gradle
+      - name: Build APK (smart module & flavor detection)
         shell: bash
         run: |
           set -e
 
           build_no_flavor() {
+            echo ">>> [Build] SENZA flavor (entrypoint: lib/main.dart)"
             if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
               flutter build apk --release -t lib/main.dart
             else
@@ -64,7 +65,7 @@ jobs:
 
           build_with_flavor() {
             local FL="$1"
-            echo ">>> Provo con flavor: $FL"
+            echo ">>> [Build] Con flavor: $FL (entrypoint: lib/main.dart)"
             if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
               flutter build apk --release --flavor "$FL" -t lib/main.dart
             else
@@ -73,39 +74,59 @@ jobs:
             fi
           }
 
-          echo ">>> [1/2] Provo build SENZA flavor"
+          # 1) Prova build senza flavor
           set +e
           build_no_flavor
           STATUS=$?
           set -e
-
           if [ $STATUS -eq 0 ]; then
             echo ">>> Build senza flavor riuscita"
             exit 0
           fi
 
-          echo ">>> Build senza flavor fallita. Provo a rilevare i flavors da Gradle…"
+          echo ">>> Build senza flavor fallita. Rilevo MODULO e FLAVORS con Gradle..."
 
-          # Estrapola i flavors dai task assemble*Release
+          # 2) Scopri il modulo corretto con Gradle
           pushd android >/dev/null
           chmod +x ./gradlew
+
+          # Elenca i progetti Gradle e prendi il PRIMO subproject (diverso dal root)
+          MODULE=$(./gradlew -q projects \
+            | sed -n "s/^Project '\\(.*\\)'.*/\\1/p" \
+            | grep -v "^Root project 'android'$" \
+            | head -n1)
+
+          if [ -z "$MODULE" ]; then
+            echo ">>> Nessun subproject trovato da Gradle. Provo a usare ':app' come default."
+            MODULE="app"
+          fi
+
+          echo ">>> Modulo rilevato: $MODULE"
+
+          # 3) Trova flavors (task assemble*Release) per quel modulo
           FLAVORS=$(
-            ./gradlew -q :app:tasks --all \
+            ./gradlew -q ":${MODULE}:tasks" --all \
               | sed -n 's/.*assemble\([A-Za-z0-9]\+\)Release.*/\1/p' \
               | sort -u \
               | tr '[:upper:]' '[:lower:]'
           )
+
           popd >/dev/null
+          echo ">>> Flavors rilevati: ${FLAVORS:-<nessuno>}"
 
-          echo ">>> Flavors rilevati (da Gradle): ${FLAVORS:-<nessuno>}"
-
+          # 4) Se NON ci sono flavors, riprova una build release “semplice” (Flutter gestisce il modulo internamente)
           if [ -z "$FLAVORS" ]; then
-            echo "Nessun flavor trovato da Gradle ma build senza flavor fallita."
-            echo "Controlla android/app/build.gradle (productFlavors) o dimmi il flavor da usare."
-            exit 1
+            echo ">>> Nessun flavor trovato. Riprovo una build release semplice."
+            if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+              flutter build apk --release -t lib/main.dart
+            else
+              flutter build apk --release -t lib/main.dart \
+                --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            fi
+            exit 0
           fi
 
-          # Prova tutti i flavors
+          # 5) Prova tutti i flavors
           for F in $FLAVORS; do
             set +e
             build_with_flavor "$F"
@@ -115,6 +136,7 @@ jobs:
               echo ">>> Build riuscita con flavor: $F"
               exit 0
             fi
+            echo ">>> Build fallita con flavor: $F. Provo il prossimo (se presente)..."
           done
 
           echo ">>> Nessun flavor ha prodotto una build valida."

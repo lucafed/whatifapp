@@ -1,4 +1,4 @@
-name: Android APK
+name: Android APK (no-flavor, verbose)
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
           yes | $SM --licenses >/dev/null 2>&1 || true
           $SM "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # 5) Flutter stabile
+      # 5) Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -47,105 +47,40 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
-      # 6) Build “smart”: senza flavor -> se fallisce, rileva MODULO + FLAVOR con Gradle
-      - name: Build APK (smart module & flavor detection)
+      # 6) Build release SENZA flavor + log verbose
+      - name: Build APK (release, no-flavor, verbose)
         shell: bash
         run: |
           set -e
+          # Se il tuo entrypoint non è lib/main.dart, cambia qui:
+          ENTRYPOINT="lib/main.dart"
 
-          build_no_flavor() {
-            echo ">>> [Build] SENZA flavor (entrypoint: lib/main.dart)"
-            if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release -t lib/main.dart
-            else
-              flutter build apk --release -t lib/main.dart \
-                --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            fi
-          }
-
-          build_with_flavor() {
-            local FL="$1"
-            echo ">>> [Build] Con flavor: $FL (entrypoint: lib/main.dart)"
-            if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release --flavor "$FL" -t lib/main.dart
-            else
-              flutter build apk --release --flavor "$FL" -t lib/main.dart \
-                --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            fi
-          }
-
-          # 1) Prova build senza flavor
+          # Build verbose. tee salva il log su file.
           set +e
-          build_no_flavor
-          STATUS=$?
+          flutter build apk --release -t "$ENTRYPOINT" -v | tee build-verbose.log
+          STATUS=${PIPESTATUS[0]}
           set -e
-          if [ $STATUS -eq 0 ]; then
-            echo ">>> Build senza flavor riuscita"
-            exit 0
-          fi
 
-          echo ">>> Build senza flavor fallita. Rilevo MODULO e FLAVORS con Gradle..."
+          # Salva log sempre (anche se fallisce)
+          mkdir -p build_logs
+          mv build-verbose.log build_logs/build-verbose.log || true
 
-          # 2) Scopri il modulo corretto con Gradle
-          pushd android >/dev/null
-          chmod +x ./gradlew
+          # Esci con lo stesso exit code
+          exit $STATUS
 
-          # Elenca i progetti Gradle e prendi il PRIMO subproject (diverso dal root)
-          MODULE=$(./gradlew -q projects \
-            | sed -n "s/^Project '\\(.*\\)'.*/\\1/p" \
-            | grep -v "^Root project 'android'$" \
-            | head -n1)
-
-          if [ -z "$MODULE" ]; then
-            echo ">>> Nessun subproject trovato da Gradle. Provo a usare ':app' come default."
-            MODULE="app"
-          fi
-
-          echo ">>> Modulo rilevato: $MODULE"
-
-          # 3) Trova flavors (task assemble*Release) per quel modulo
-          FLAVORS=$(
-            ./gradlew -q ":${MODULE}:tasks" --all \
-              | sed -n 's/.*assemble\([A-Za-z0-9]\+\)Release.*/\1/p' \
-              | sort -u \
-              | tr '[:upper:]' '[:lower:]'
-          )
-
-          popd >/dev/null
-          echo ">>> Flavors rilevati: ${FLAVORS:-<nessuno>}"
-
-          # 4) Se NON ci sono flavors, riprova una build release “semplice” (Flutter gestisce il modulo internamente)
-          if [ -z "$FLAVORS" ]; then
-            echo ">>> Nessun flavor trovato. Riprovo una build release semplice."
-            if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release -t lib/main.dart
-            else
-              flutter build apk --release -t lib/main.dart \
-                --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            fi
-            exit 0
-          fi
-
-          # 5) Prova tutti i flavors
-          for F in $FLAVORS; do
-            set +e
-            build_with_flavor "$F"
-            STATUS=$?
-            set -e
-            if [ $STATUS -eq 0 ]; then
-              echo ">>> Build riuscita con flavor: $F"
-              exit 0
-            fi
-            echo ">>> Build fallita con flavor: $F. Provo il prossimo (se presente)..."
-          done
-
-          echo ">>> Nessun flavor ha prodotto una build valida."
-          exit 1
-
-      # 7) Upload APK
-      - name: Upload APK
+      # 7) Carica APK se presente
+      - name: Upload APK (if exists)
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      # 8) Carica SEMPRE i log della build
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build_logs/
+          if-no-files-found: ignore

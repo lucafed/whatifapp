@@ -1,1 +1,0 @@
-Run `flutter create .` on macOS to generate full iOS project.

@@ -1,4 +1,4 @@
-package com.whatif.whatifapp
+package com.example.whatifapp
 
 import io.flutter.embedding.android.FlutterActivity
 

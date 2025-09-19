@@ -30,8 +30,7 @@ android {
 
     buildTypes {
         release {
-            // Firma di debug temporanea; per Play configureremo la release signing
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.debug  // temporaneo; firma release dopo
             minifyEnabled false
             shrinkResources false
         }

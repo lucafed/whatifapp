@@ -1,18 +1,16 @@
+# whatifapp
 
-# What?f — Flutter app (FULL, locale)
+A new Flutter project.
 
-**Feature incluse**
-- Bottom navigation (Home / Cronologia / Esplora)
-- Percorso guidato (generiche → tema → mirate + testo libero)
-- "Apri la porta" + animazione porta, "Rigenera" solo se modifichi l'input
-- Due scenari AI (Sliding Doors / What the F?!) con short/long, probabilità, rationale, "Vedi di più"
-- Condivisione testo (share_plus), Audio TTS (flutter_tts)
-- Cronologia locale + limite 3 domande/giorno
-- Like locali + Top 10 mock
-- Tema dark/violaceo + light
-- GitHub Actions (APK build) + Dev Container (Codespaces) pronti
+## Getting Started
 
-## Avvio locale (se hai Flutter)
-```bash
-flutter pub get
-flutter run --dart-define=OPENAI_API_KEY=sk-...LA_TUA_CHIAVE
+This project is a starting point for a Flutter application.
+
+A few resources to get you started if this is your first Flutter project:
+
+- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.

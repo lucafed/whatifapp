@@ -12,14 +12,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Java 17 per Gradle/Android
+      # 2) Java 17
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3) Android SDK (ambiente base)
+      # 3) Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -33,7 +33,7 @@ jobs:
           yes | $SM --licenses >/dev/null 2>&1 || true
           $SM "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # 5) Flutter (versione pin stabile)
+      # 5) Flutter stabile
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -41,50 +41,86 @@ jobs:
           flutter-version: "3.24.0"
           cache: true
 
-      # 6) Dipendenze
       - name: Flutter doctor
         run: flutter doctor -v
 
       - name: Pub get
         run: flutter pub get
 
-      # 7) Build APK release (auto-detect flavor)
-      - name: Build APK (release, auto-flavor)
+      # 6) Build “smart”: senza flavor -> se fallisce, rileva flavors da Gradle e riprova
+      - name: Build APK (smart flavor detection)
         shell: bash
         run: |
           set -e
 
-          # Estrai il PRIMO flavor (se esiste) dal blocco productFlavors in android/app/build.gradle
-          FLAVOR=$(awk '
-            /productFlavors[[:space:]]*{/ {inblock=1; next}
-            inblock && /}/ {exit}
-            inblock && match($0,/^[[:space:]]*([A-Za-z0-9_]+)[[:space:]]*{/,m) {print m[1]; exit}
-          ' android/app/build.gradle)
-
-          echo "Flavor rilevato: ${FLAVOR:-<nessuno>}"
-
-          # Entry point (cambia se usi un main diverso)
-          ENTRYPOINT="lib/main.dart"
-
-          if [ -z "$FLAVOR" ]; then
-            # Nessun flavor
+          build_no_flavor() {
             if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release -t "$ENTRYPOINT"
+              flutter build apk --release -t lib/main.dart
             else
-              flutter build apk --release -t "$ENTRYPOINT" \
+              flutter build apk --release -t lib/main.dart \
                 --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             fi
-          else
-            # Con flavor
+          }
+
+          build_with_flavor() {
+            local FL="$1"
+            echo ">>> Provo con flavor: $FL"
             if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-              flutter build apk --release --flavor "$FLAVOR" -t "$ENTRYPOINT"
+              flutter build apk --release --flavor "$FL" -t lib/main.dart
             else
-              flutter build apk --release --flavor "$FLAVOR" -t "$ENTRYPOINT" \
+              flutter build apk --release --flavor "$FL" -t lib/main.dart \
                 --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             fi
+          }
+
+          echo ">>> [1/2] Provo build SENZA flavor"
+          set +e
+          build_no_flavor
+          STATUS=$?
+          set -e
+
+          if [ $STATUS -eq 0 ]; then
+            echo ">>> Build senza flavor riuscita"
+            exit 0
           fi
 
-      # 8) Carica l'APK come artifact
+          echo ">>> Build senza flavor fallita. Provo a rilevare i flavors da Gradle…"
+
+          # Estrapola i flavors dai task assemble*Release
+          pushd android >/dev/null
+          chmod +x ./gradlew
+          FLAVORS=$(
+            ./gradlew -q :app:tasks --all \
+              | sed -n 's/.*assemble\([A-Za-z0-9]\+\)Release.*/\1/p' \
+              | sort -u \
+              | tr '[:upper:]' '[:lower:]'
+          )
+          popd >/dev/null
+
+          echo ">>> Flavors rilevati (da Gradle): ${FLAVORS:-<nessuno>}"
+
+          if [ -z "$FLAVORS" ]; then
+            echo "Nessun flavor trovato da Gradle ma build senza flavor fallita."
+            echo "Controlla android/app/build.gradle (productFlavors) o dimmi il flavor da usare."
+            exit 1
+          fi
+
+          # Prova tutti i flavors
+          for F in $FLAVORS; do
+            set +e
+            build_with_flavor "$F"
+            STATUS=$?
+            set -e
+            if [ $STATUS -eq 0 ]; then
+              echo ">>> Build riuscita con flavor: $F"
+              exit 0
+            fi
+          done
+
+          echo ">>> Nessun flavor ha prodotto una build valida."
+          exit 1
+
+      # 7) Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

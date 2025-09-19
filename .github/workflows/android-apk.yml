@@ -3,57 +3,56 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout codice
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Set up Java (JDK 17)
-        uses: actions/setup-java@v4
+      # 2. Setup Java (necessario per Gradle/Flutter Android)
+      - name: Setup Java
+        uses: actions/setup-java@v3
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: 17
 
+      # 3. Setup Android SDK (solo ambiente)
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-34
-            build-tools;34.0.0
 
-      - name: Set up Flutter (pin exact version)
+      # 4. Installa manualmente pacchetti Android
+      - name: Install Android packages
+        run: |
+          sdkmanager --version
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      # 5. Setup Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          flutter-version: "3.24.0"   # <— versione stabile esplicita
-          cache: true
+          flutter-version: '3.24.0'
 
-      - name: Flutter doctor (info)
+      # 6. Controllo Flutter
+      - name: Flutter Doctor
         run: flutter doctor -v
 
-      - name: Install dependencies
+      # 7. Installa dipendenze
+      - name: Get dependencies
         run: flutter pub get
 
-      - name: Build APK (release)
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-            echo "No OPENAI_API_KEY secret -> building without dart-define"
-            flutter build apk --release
-          else
-            echo "OPENAI_API_KEY detected -> passing dart-define"
-            flutter build apk --release --dart-define=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          fi
+      # 8. Build APK
+      - name: Build APK
+        run: flutter build apk --release
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      # 9. Carica l'APK come artefatto
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
         with:
-          name: whatf-app-apk
+          name: whatif-app-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 

@@ -1,28 +1,25 @@
-plugins {
-    id "com.android.application"
-    id "org.jetbrains.kotlin.android"
-    id "dev.flutter.flutter-gradle-plugin"
-}
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
 
 android {
-    namespace "com.example.whatifapp"
-    compileSdk 34
+    namespace "com.whatifapp"
+    compileSdk 36
 
     defaultConfig {
-        applicationId "com.example.whatifapp"
-        minSdkVersion 21
-        targetSdkVersion 34
+        applicationId "com.whatifapp"
+        minSdk 21
+        targetSdk 36
         versionCode 1
         versionName "1.0"
-        multiDexEnabled true
     }
 
     buildTypes {
         release {
-            // Firma debug provvisoria: per Play configureremo la release signing
-            signingConfig signingConfigs.debug
             minifyEnabled false
-            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // nulla
         }
     }
 
@@ -31,10 +28,10 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = '17'
     }
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
 }

@@ -1,17 +1,21 @@
-name: Build Android APK
+name: Android APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # esecuzione manuale
+  push:
+    branches:
+      - main           # parte solo quando aggiorni main
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
+
     steps:
       # 1) Checkout del codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Setup Java (necessario per Gradle/Android)
+      # 2) Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -22,7 +26,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.0"
+          flutter-version: "3.35.4"   # Dart >=3.9 incluso
           channel: stable
           cache: true
 
@@ -34,7 +38,8 @@ jobs:
       - name: Setup Android SDK
         run: |
           echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       # 6) Build APK (entrypoint default: lib/main.dart)
       - name: Build APK

@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'models.dart';
 
 class AiService {
   final String baseUrl = const String.fromEnvironment("API_BASE_URL", defaultValue: "http://10.0.2.2:3000");

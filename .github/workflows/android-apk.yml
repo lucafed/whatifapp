@@ -1,5 +1,4 @@
 name: Android APK
-
 on:
   workflow_dispatch:
 
@@ -8,18 +7,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Java 21 (richiesto per lib moderne/Jetifier)
+      # Java 21
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
 
-      # 3) Flutter 3.35.4 (Dart 3.9)
+      # Flutter 3.35.4
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -27,23 +25,23 @@ jobs:
           channel: stable
           cache: true
 
-      # 4) Dipendenze Dart/Flutter
-      - name: Flutter pub get
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Pub get
         run: flutter pub get
 
-      # 5) Android SDK + licenze (platform 34 + tools)
-      - name: Accept licenses & install SDKs
+      # SDK + licenze (strumenti basilari)
+      - name: Android SDK components
         run: |
           yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
           ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "cmake;3.22.1" \
-            "ndk;25.1.8937393"
+            "platforms;android-36" \
+            "build-tools;36.0.0"
 
-      # 5.5) Keystore debug (usato per build di test in CI)
-      - name: Prepare Android debug keystore
+      # Keystore debug per firmare la release in CI
+      - name: Prepare debug keystore
         run: |
           echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
           mkdir -p "$HOME/.android"
@@ -56,21 +54,20 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
-      # 6) Build APK (tollerante ai controlli di versione AGP/Gradle)
+      # Build APK (evita blocchi sui check di versioni)
       - name: Build APK
         run: |
-          flutter doctor -v
           flutter build apk --release --android-skip-build-dependency-validation
 
-      # 7) Lista degli output (debug visivo)
+      # Debug: elenca dove sta l’APK
       - name: List outputs
         run: |
           echo "== tree build =="
           find build -maxdepth 6 -type d -print || true
-          echo "== APKs trovati =="
+          echo "== APKs =="
           find . -maxdepth 8 -type f -name "*.apk" -print || true
 
-      # 8) Localizza il primo APK prodotto
+      # Localizza il primo APK e lo esporta come artefatto
       - name: Locate APK
         id: locate
         run: |
@@ -85,7 +82,6 @@ jobs:
           echo "👉 APK: $APK"
           echo "apk=$APK" >> $GITHUB_OUTPUT
 
-      # 9) Carica l’APK come artefatto scaricabile
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

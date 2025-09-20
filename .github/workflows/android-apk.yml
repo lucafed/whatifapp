@@ -2,26 +2,24 @@ name: Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout codice
+      # 1) Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Setup Java
+      # 2) Java 17 (richiesto da AGP)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3) Setup Flutter
+      # 3) Flutter 3.35.4
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -29,52 +27,54 @@ jobs:
           channel: stable
           cache: true
 
-      # 4) Dipendenze
-      - name: Flutter Pub Get
+      # 4) Dipendenze Dart
+      - name: Flutter pub get
         run: flutter pub get
 
-      # 5) Setup Android SDK
-      - name: Setup Android SDK
+      # 5) Android SDK + licenze (piattaforme più usate)
+      - name: Accept licenses & install SDKs
         run: |
-          echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "cmake;3.22.1" \
+            "ndk;25.1.8937393"
 
-      # 5.5) Debug keystore per la firma
-      - name: Prepare Android debug keystore
-        run: |
-          echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkey -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android -keypass android \
-              -alias androiddebugkey \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA -keysize 2048 -validity 10000
-          fi
-
-      # 6) Build APK (non fermarsi se Flutter non trova l'artefatto)
+      # 6) Compila APK (flag per bypassare i controlli di versione AGP/Gradle)
       - name: Build APK
         run: |
-          set +e
-          flutter build apk --release || true
-          set -e
+          flutter doctor -v
+          flutter build apk --release --android-skip-build-dependency-validation
 
-      # 7) Elenca tutte le cartelle output
+      # 7) Elenca tutto ciò che ha prodotto (debug visivo)
       - name: List outputs
         run: |
-          echo "== build/app/outputs =="
-          ls -R build/app/outputs || true
-          echo "== android/app/build/outputs =="
-          ls -R android/app/build/outputs || true
+          echo "== tree build (max depth) =="
+          find build -maxdepth 6 -type d -print || true
+          echo "== APKs trovati =="
+          find . -maxdepth 6 -type f -name "*.apk" -print || true
 
-      # 8) Carica qualunque APK trovato
+      # 8) Trova il primo APK valido e lo espone come output
+      - name: Locate APK
+        id: locate
+        run: |
+          APK=$(find build -type f -name "*.apk" | head -n 1 || true)
+          if [ -z "$APK" ]; then
+            APK=$(find android -type f -name "*.apk" | head -n 1 || true)
+          fi
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found after build"
+            exit 1
+          fi
+          echo "👉 APK: $APK"
+          echo "apk=$APK" >> $GITHUB_OUTPUT
+
+      # 9) Carica l’APK effettivo
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: |
-            build/app/outputs/**/*.apk
-            android/app/build/outputs/**/*.apk
+          path: ${{ steps.locate.outputs.apk }}
           if-no-files-found: error

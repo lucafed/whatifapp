@@ -8,18 +8,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout
+      # 1) Checkout codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Java 17 (richiesto da AGP)
+      # 2) Java 21 (richiesto per lib moderne/Jetifier)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      # 3) Flutter 3.35.4
+      # 3) Flutter 3.35.4 (Dart 3.9)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -27,11 +27,11 @@ jobs:
           channel: stable
           cache: true
 
-      # 4) Dipendenze Dart
+      # 4) Dipendenze Dart/Flutter
       - name: Flutter pub get
         run: flutter pub get
 
-      # 5) Android SDK + licenze (piattaforme più usate)
+      # 5) Android SDK + licenze (platform 34 + tools)
       - name: Accept licenses & install SDKs
         run: |
           yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
@@ -42,21 +42,35 @@ jobs:
             "cmake;3.22.1" \
             "ndk;25.1.8937393"
 
-      # 6) Compila APK (flag per bypassare i controlli di versione AGP/Gradle)
+      # 5.5) Keystore debug (usato per build di test in CI)
+      - name: Prepare Android debug keystore
+        run: |
+          echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkey -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      # 6) Build APK (tollerante ai controlli di versione AGP/Gradle)
       - name: Build APK
         run: |
           flutter doctor -v
           flutter build apk --release --android-skip-build-dependency-validation
 
-      # 7) Elenca tutto ciò che ha prodotto (debug visivo)
+      # 7) Lista degli output (debug visivo)
       - name: List outputs
         run: |
-          echo "== tree build (max depth) =="
+          echo "== tree build =="
           find build -maxdepth 6 -type d -print || true
           echo "== APKs trovati =="
-          find . -maxdepth 6 -type f -name "*.apk" -print || true
+          find . -maxdepth 8 -type f -name "*.apk" -print || true
 
-      # 8) Trova il primo APK valido e lo espone come output
+      # 8) Localizza il primo APK prodotto
       - name: Locate APK
         id: locate
         run: |
@@ -71,7 +85,7 @@ jobs:
           echo "👉 APK: $APK"
           echo "apk=$APK" >> $GITHUB_OUTPUT
 
-      # 9) Carica l’APK effettivo
+      # 9) Carica l’APK come artefatto scaricabile
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

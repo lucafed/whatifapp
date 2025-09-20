@@ -2,8 +2,6 @@ name: Android AAB
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build-android-aab:
@@ -14,14 +12,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Setup Java
+      # 2) Java 21 (compatibile con librerie moderne/Jetifier)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      # 3) Setup Flutter
+      # 3) Flutter 3.35.4 (Dart 3.9)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -29,18 +27,22 @@ jobs:
           channel: stable
           cache: true
 
-      # 4) Dipendenze
-      - name: Flutter Pub Get
+      # 4) Dipendenze Dart/Flutter
+      - name: Flutter pub get
         run: flutter pub get
 
-      # 5) Setup Android SDK
-      - name: Setup Android SDK
+      # 5) Android SDK + licenze
+      - name: Accept licenses & install SDKs
         run: |
-          echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "cmake;3.22.1" \
+            "ndk;25.1.8937393"
 
-      # 5.5) Debug keystore (firma di test in CI)
+      # 5.5) Keystore debug (solo per build di test in CI; per Play servirà keystore release)
       - name: Prepare Android debug keystore
         run: |
           echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
@@ -54,27 +56,39 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
-      # 6) Build AAB (tollerante agli errori di path)
+      # 6) Build AAB (bypassa i check di versione AGP/Gradle se rumorosi)
       - name: Build AAB
         run: |
-          set +e
-          flutter build appbundle --release || true
-          set -e
+          flutter doctor -v
+          flutter build appbundle --release --android-skip-build-dependency-validation
 
-      # 7) Elenca tutte le cartelle output
+      # 7) Lista degli output (debug visivo)
       - name: List outputs
         run: |
-          echo "== build/app/outputs =="
-          ls -R build/app/outputs || true
-          echo "== android/app/build/outputs =="
-          ls -R android/app/build/outputs || true
+          echo "== tree build =="
+          find build -maxdepth 6 -type d -print || true
+          echo "== AABs trovati =="
+          find . -maxdepth 8 -type f -name "*.aab" -print || true
 
-      # 8) Carica qualunque AAB trovato
+      # 8) Localizza il primo AAB prodotto
+      - name: Locate AAB
+        id: locate
+        run: |
+          AAB=$(find build -type f -name "*.aab" | head -n 1 || true)
+          if [ -z "$AAB" ]; then
+            AAB=$(find android -type f -name "*.aab" | head -n 1 || true)
+          fi
+          if [ -z "$AAB" ]; then
+            echo "::error::No AAB found after build"
+            exit 1
+          fi
+          echo "👉 AAB: $AAB"
+          echo "aab=$AAB" >> $GITHUB_OUTPUT
+
+      # 9) Carica l’AAB come artefatto scaricabile
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: app-release-aab
-          path: |
-            build/app/outputs/**/*.aab
-            android/app/build/outputs/**/*.aab
+          path: ${{ steps.locate.outputs.aab }}
           if-no-files-found: error

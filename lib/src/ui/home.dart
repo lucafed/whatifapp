@@ -302,7 +302,7 @@ class _GuidedFlowSheetState extends State<GuidedFlowSheet> {
       Text('2) Scegli un tema', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 8),
       DropdownButtonFormField<String>(
-        value: category,
+        initialValue: category,
         items: suggestions.keys.map((k)=> DropdownMenuItem(value: k, child: Text(k[0].toUpperCase()+k.substring(1)))).toList(),
         onChanged: (v)=> setState(()=> category = v ?? 'lavoro'),
         decoration: const InputDecoration(border: OutlineInputBorder()),
@@ -343,7 +343,7 @@ class _GuidedFlowSheetState extends State<GuidedFlowSheet> {
     final ctx = parts.isEmpty ? '' : '(${parts.join(' • ')}) ';
     final core = specific.isNotEmpty ? specific : '...';
     final extra = freeCtrl.text.trim();
-    final q = 'What?f $ctx$core' + (extra.isNotEmpty ? ' — $extra' : '');
+    final q = 'What?f $ctx$core${extra.isNotEmpty ? ' — $extra' : ''}';
     return q;
   }
 }

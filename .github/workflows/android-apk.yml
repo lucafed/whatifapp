@@ -10,18 +10,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Codice
+      # 1) Checkout codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Java
+      # 2) Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3) Flutter (Dart >= 3.9)
+      # 3) Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -33,14 +33,14 @@ jobs:
       - name: Flutter Pub Get
         run: flutter pub get
 
-      # 5) Android SDK + licenze
+      # 5) Setup Android SDK
       - name: Setup Android SDK
         run: |
           echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
           sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # 5.5) Keystore debug per CI (usiamo signing di debug in release di test)
+      # 5.5) Debug keystore per la firma
       - name: Prepare Android debug keystore
         run: |
           echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
@@ -54,24 +54,27 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
-      # 6) Build con Flutter (più semplice: Gradle viene richiamato internamente)
+      # 6) Build APK (non fermarsi se Flutter non trova l'artefatto)
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          set +e
+          flutter build apk --release || true
+          set -e
 
-      # 7) Debug: mostra dove ha scritto gli output
+      # 7) Elenca tutte le cartelle output
       - name: List outputs
         run: |
-          echo "== OUTPUTS (flutter-apk) =="
-          ls -R build/app/outputs/flutter-apk || true
-          echo "== OUTPUTS (gradle apk) =="
-          ls -R android/app/build/outputs/apk || true
+          echo "== build/app/outputs =="
+          ls -R build/app/outputs || true
+          echo "== android/app/build/outputs =="
+          ls -R android/app/build/outputs || true
 
-      # 8) Carica l'APK (cattura entrambi i possibili percorsi)
+      # 8) Carica qualunque APK trovato
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: |
-            build/app/outputs/flutter-apk/*.apk
-            android/app/build/outputs/apk/release/*.apk
+            build/app/outputs/**/*.apk
+            android/app/build/outputs/**/*.apk
           if-no-files-found: error

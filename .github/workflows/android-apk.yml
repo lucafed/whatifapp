@@ -1,51 +1,64 @@
 name: Android APK
 
 on:
-  workflow_dispatch:   # esecuzione manuale
+  workflow_dispatch:
   push:
-    branches:
-      - main           # parte solo quando aggiorni main
+    branches: [ main ]
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout del codice
+      # 1) Codice
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Setup Java
+      # 2) Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3) Setup Flutter
+      # 3) Flutter (Dart >= 3.9)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.35.4"   # Dart >=3.9 incluso
+          flutter-version: "3.35.4"
           channel: stable
           cache: true
 
-      # 4) Installare dipendenze
+      # 4) Dipendenze
       - name: Flutter Pub Get
         run: flutter pub get
 
-      # 5) Accettare licenze Android e installare SDK necessari
+      # 5) Android SDK + licenze
       - name: Setup Android SDK
         run: |
           echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
           sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # 6) Build APK (entrypoint default: lib/main.dart)
+      # 5.5) Keystore debug (necessario perché usiamo signing di debug in release)
+      - name: Prepare Android debug keystore
+        run: |
+          echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkey -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      # 6) Build APK
       - name: Build APK
         run: flutter build apk --release
 
-      # 7) Caricare APK come artefatto scaricabile
+      # 7) Artefatto
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

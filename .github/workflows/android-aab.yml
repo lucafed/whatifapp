@@ -10,15 +10,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1) Checkout codice
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2) Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # 3) Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -26,15 +29,18 @@ jobs:
           channel: stable
           cache: true
 
+      # 4) Dipendenze
       - name: Flutter Pub Get
         run: flutter pub get
 
+      # 5) Setup Android SDK
       - name: Setup Android SDK
         run: |
           echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --licenses || true
           sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
+      # 5.5) Debug keystore (firma di test in CI)
       - name: Prepare Android debug keystore
         run: |
           echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
@@ -48,12 +54,27 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
+      # 6) Build AAB (tollerante agli errori di path)
       - name: Build AAB
-        run: flutter build appbundle --release
+        run: |
+          set +e
+          flutter build appbundle --release || true
+          set -e
 
+      # 7) Elenca tutte le cartelle output
+      - name: List outputs
+        run: |
+          echo "== build/app/outputs =="
+          ls -R build/app/outputs || true
+          echo "== android/app/build/outputs =="
+          ls -R android/app/build/outputs || true
+
+      # 8) Carica qualunque AAB trovato
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: app-release-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+          path: |
+            build/app/outputs/**/*.aab
+            android/app/build/outputs/**/*.aab
           if-no-files-found: error

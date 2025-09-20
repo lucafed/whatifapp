@@ -29,7 +29,7 @@ jobs:
           channel: stable
           cache: true
 
-      # 4) Dipendenze Dart/Flutter
+      # 4) Dipendenze
       - name: Flutter Pub Get
         run: flutter pub get
 
@@ -40,7 +40,7 @@ jobs:
           sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # 5.5) Keystore debug (usiamo signing debug per la release di test in CI)
+      # 5.5) Keystore debug per CI (usiamo signing di debug in release di test)
       - name: Prepare Android debug keystore
         run: |
           echo "ANDROID_SDK_HOME=$HOME" >> $GITHUB_ENV
@@ -54,14 +54,11 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
-      # 6) Build APK con Gradle (più robusto con i nuovi plugin)
-      - name: Build APK (Gradle)
-        working-directory: android
-        run: |
-          ./gradlew --version
-          ./gradlew clean :app:assembleRelease -x lint
+      # 6) Build con Flutter (più semplice: Gradle viene richiamato internamente)
+      - name: Build APK
+        run: flutter build apk --release
 
-      # 7) Debug: lista file prodotti
+      # 7) Debug: mostra dove ha scritto gli output
       - name: List outputs
         run: |
           echo "== OUTPUTS (flutter-apk) =="
@@ -69,7 +66,7 @@ jobs:
           echo "== OUTPUTS (gradle apk) =="
           ls -R android/app/build/outputs/apk || true
 
-      # 8) Carica qualsiasi APK trovato (gradle o flutter)
+      # 8) Carica l'APK (cattura entrambi i possibili percorsi)
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
